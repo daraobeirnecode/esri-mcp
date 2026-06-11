@@ -53,7 +53,11 @@ class EsriClient:
         params = dict(params or {})
         params["f"] = "json"
 
-        token = await self.tokens.get_token(self._http)
+        # Token only for the credential's home host — open data sources need no auth,
+        # and credentials must never be sent to third-party servers.
+        token = None
+        if self.tokens.applies_to(url):
+            token = await self.tokens.get_token(self._http)
         if token:
             params["token"] = token
 

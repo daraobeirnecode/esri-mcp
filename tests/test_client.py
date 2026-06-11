@@ -60,10 +60,37 @@ async def test_token_error_falls_back_to_anonymous():
     client = EsriClient(tokens=TokenManager(api_key="stale-key"))
     client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    body = await client.get_json("https://example.com/rest/services/Public/MapServer")
+    # arcgis.com host so the AGOL key is actually attached on the first try
+    body = await client.get_json("https://services.arcgis.com/abc/rest/services/Pub/MapServer")
     assert body == {"layers": []}
     assert len(calls) == 2
     assert "token" in calls[0] and "token" not in calls[1]
+
+
+async def test_token_never_sent_to_foreign_hosts():
+    """Configured credentials must not leak to servers they don't belong to, and open
+    data must work without auth even when credentials are set."""
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append({"host": request.url.host, "params": dict(request.url.params)})
+        return json_response({"layers": []})
+
+    # Enterprise credential, request to an unrelated public server
+    client = EsriClient(
+        tokens=TokenManager(
+            username="u", password="p", portal_url="https://portal.example.com/portal"
+        )
+    )
+    client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await client.get_json("https://sampleserver6.arcgisonline.com/arcgis/rest/services/X")
+    assert "token" not in calls[-1]["params"]
+
+    # AGOL key, request to a non-Esri host
+    client2 = EsriClient(tokens=TokenManager(api_key="agol-key"))
+    client2._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await client2.get_json("https://gis.some-county.gov/arcgis/rest/services/Y")
+    assert "token" not in calls[-1]["params"]
 
 
 async def test_long_request_uses_post():

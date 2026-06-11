@@ -43,6 +43,7 @@ Modes are selected by which env vars are present (checked in this order):
 `ARCGIS_GEOCODER_URL` overrides the AGOL World Geocoder with any GeocodeServer endpoint.
 
 Rules:
+- **Tokens are host-scoped** (`TokenManager.applies_to`): AGOL creds → `*.arcgis.com` only; Enterprise/standalone tokens → the portal/token host only (+ `ARCGIS_TOKEN_HOSTS` for federated multi-host deployments). All other hosts go anonymous — open data never depends on auth and credentials never leak to third-party servers.
 - Tokens are cached in-process with expiry tracking; refresh 5 minutes before `expires`.
 - **Never** write tokens/keys to logs, error messages, code, or test fixtures. Env vars only (`.env` is gitignored; `.env.example` documents the names).
 - Anonymous access must work — many public services need no token. Auth failure on a public endpoint should fall back to anonymous, not crash.

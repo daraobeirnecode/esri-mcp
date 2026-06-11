@@ -60,7 +60,11 @@ No credentials needed for public services. Ask your agent something like:
 
 ## Authentication
 
-Anonymous access works out of the box — most public services need no token. For secured content, set env vars for **one** of three modes (checked in this order; see [.env.example](.env.example)):
+**Anonymous access works out of the box** — open data in ArcGIS Online, Living Atlas, public Enterprise services, and public standalone servers all work with zero configuration. No token is requested or sent.
+
+**Tokens are host-scoped.** When credentials *are* configured, they are only attached to requests targeting their home host — AGOL credentials go to `*.arcgis.com` only, Enterprise/standalone tokens go to the portal/token host only. Every other host is queried anonymously, so configured credentials never block access to open data and are never leaked to third-party servers (e.g. an agent pointed at an arbitrary service URL). Federated deployments where the servers live on different hostnames than the portal can opt extra hosts in with `ARCGIS_TOKEN_HOSTS=gis.example.com,imagery.example.com`.
+
+For secured content, set env vars for **one** of these modes (checked in this order; see [.env.example](.env.example)):
 
 | Mode | Env vars | Use for |
 |---|---|---|

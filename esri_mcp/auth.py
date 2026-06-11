@@ -40,6 +40,10 @@ class TokenManager:
     portal_url: str | None = None
     token_url: str | None = None  # explicit generateToken endpoint (standalone ArcGIS Server)
     use_ntlm: bool = False
+    # Extra hosts the token may be sent to (federated deployments where the portal and
+    # its servers live on different hostnames). Beyond these + the home host, requests
+    # go anonymous — open data needs no auth, and credentials never leak to third parties.
+    extra_token_hosts: tuple[str, ...] = ()
 
     _token: str | None = field(default=None, repr=False)
     _expires_at: float = 0.0  # epoch seconds; 0 means no cached token
@@ -55,6 +59,11 @@ class TokenManager:
             portal_url=(os.environ.get("ARCGIS_PORTAL_URL") or "").rstrip("/") or None,
             token_url=(os.environ.get("ARCGIS_TOKEN_URL") or "").rstrip("/") or None,
             use_ntlm=(os.environ.get("ARCGIS_USE_NTLM") or "").lower() in {"1", "true", "yes"},
+            extra_token_hosts=tuple(
+                h.strip().lower()
+                for h in (os.environ.get("ARCGIS_TOKEN_HOSTS") or "").split(",")
+                if h.strip()
+            ),
         )
 
     @property
@@ -68,6 +77,27 @@ class TokenManager:
         if self.username and self.password and (self.portal_url or self.token_url):
             return "generate_token"
         return "anonymous"
+
+    def applies_to(self, url: str) -> bool:
+        """Whether the configured credential should be attached to a request to `url`.
+
+        Tokens are scoped to their home host: AGOL credentials go only to *.arcgis.com,
+        Enterprise/standalone tokens only to the portal/token host (plus
+        ARCGIS_TOKEN_HOSTS). Everything else is anonymous, so open data sources work
+        without auth and credentials are never sent to third-party servers.
+        """
+        mode = self.mode
+        if mode in ("anonymous", "ntlm"):
+            return False  # nothing to attach; ntlm authenticates at the transport layer
+        host = (httpx.URL(url).host or "").lower()
+        if not host:
+            return False
+        if host in self.extra_token_hosts:
+            return True
+        if mode in ("api_key", "oauth"):
+            return host == "arcgis.com" or host.endswith(".arcgis.com")
+        home = (httpx.URL(self.token_url or self.portal_url or "").host or "").lower()
+        return bool(home) and host == home
 
     async def get_token(self, http: httpx.AsyncClient) -> str | None:
         """Return a valid token, or None for anonymous/ntlm modes (ntlm authenticates at

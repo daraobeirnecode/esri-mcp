@@ -27,6 +27,42 @@ def test_mode_precedence():
     assert TokenManager(use_ntlm=True).mode == "anonymous"
 
 
+def test_token_scoping_by_host():
+    """Credentials apply only to their home host — everything else goes anonymous."""
+    # AGOL credentials cover *.arcgis.com only
+    agol = TokenManager(api_key="k")
+    assert agol.applies_to("https://services.arcgis.com/abc/FeatureServer") is True
+    assert agol.applies_to("https://www.arcgis.com/sharing/rest/search") is True
+    assert agol.applies_to("https://gis.some-county.gov/arcgis/rest/services") is False
+    assert agol.applies_to("https://evilarcgis.com/steal") is False  # suffix, not subdomain
+
+    # Enterprise token covers the portal host only
+    ent = TokenManager(username="u", password="p", portal_url="https://portal.example.com/portal")
+    assert ent.applies_to("https://portal.example.com/server/rest/services/X") is True
+    assert ent.applies_to("https://www.arcgis.com/sharing/rest/search") is False
+
+    # Federated deployments opt extra hosts in via ARCGIS_TOKEN_HOSTS
+    fed = TokenManager(
+        username="u",
+        password="p",
+        portal_url="https://portal.example.com/portal",
+        extra_token_hosts=("gis.example.com",),
+    )
+    assert fed.applies_to("https://gis.example.com/server/rest/services/X") is True
+
+    # Standalone server token covers the token-endpoint host
+    srv = TokenManager(
+        username="u", password="p", token_url="https://srv.example.com:6443/arcgis/tokens"
+    )
+    assert srv.applies_to("https://srv.example.com:6443/arcgis/rest/services/X") is True
+    assert srv.applies_to("https://other.example.org/arcgis/rest/services/X") is False
+
+    # Anonymous and NTLM never attach tokens
+    assert TokenManager().applies_to("https://www.arcgis.com/x") is False
+    ntlm = TokenManager(username="DOM\\u", password="p", use_ntlm=True)
+    assert ntlm.applies_to("https://gis.corp.local/arcgis/rest/services") is False
+
+
 async def test_ntlm_mode_returns_no_token():
     """NTLM authenticates at the transport layer — no token params, no token requests."""
 
