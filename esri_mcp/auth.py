@@ -1,10 +1,14 @@
 """Token acquisition and caching for ArcGIS Online and Enterprise.
 
 Auth mode is selected by which env vars are present, checked in this order:
-  1. ARCGIS_API_KEY                                      -> static API key
-  2. ARCGIS_CLIENT_ID + ARCGIS_CLIENT_SECRET             -> OAuth2 client_credentials (AGOL)
-  3. ARCGIS_USERNAME + ARCGIS_PASSWORD + ARCGIS_PORTAL_URL -> legacy generateToken (Enterprise)
-  4. none of the above                                   -> anonymous
+  1. ARCGIS_USE_NTLM=true + ARCGIS_USERNAME + ARCGIS_PASSWORD -> IWA/NTLM (web-tier auth,
+     no tokens; needs the optional httpx-ntlm dependency)
+  2. ARCGIS_API_KEY                                      -> static API key
+  3. ARCGIS_CLIENT_ID + ARCGIS_CLIENT_SECRET             -> OAuth2 client_credentials (AGOL)
+  4. ARCGIS_USERNAME + ARCGIS_PASSWORD + ARCGIS_PORTAL_URL or ARCGIS_TOKEN_URL
+       -> legacy generateToken (Enterprise portal, or standalone ArcGIS Server when
+          ARCGIS_TOKEN_URL points at {server}/arcgis/tokens/generateToken)
+  5. none of the above                                   -> anonymous
 """
 
 import os
@@ -34,6 +38,8 @@ class TokenManager:
     username: str | None = field(default=None, repr=False)
     password: str | None = field(default=None, repr=False)
     portal_url: str | None = None
+    token_url: str | None = None  # explicit generateToken endpoint (standalone ArcGIS Server)
+    use_ntlm: bool = False
 
     _token: str | None = field(default=None, repr=False)
     _expires_at: float = 0.0  # epoch seconds; 0 means no cached token
@@ -47,22 +53,27 @@ class TokenManager:
             username=os.environ.get("ARCGIS_USERNAME"),
             password=os.environ.get("ARCGIS_PASSWORD"),
             portal_url=(os.environ.get("ARCGIS_PORTAL_URL") or "").rstrip("/") or None,
+            token_url=(os.environ.get("ARCGIS_TOKEN_URL") or "").rstrip("/") or None,
+            use_ntlm=(os.environ.get("ARCGIS_USE_NTLM") or "").lower() in {"1", "true", "yes"},
         )
 
     @property
     def mode(self) -> str:
+        if self.use_ntlm and self.username and self.password:
+            return "ntlm"
         if self.api_key:
             return "api_key"
         if self.client_id and self.client_secret:
             return "oauth"
-        if self.username and self.password and self.portal_url:
+        if self.username and self.password and (self.portal_url or self.token_url):
             return "generate_token"
         return "anonymous"
 
     async def get_token(self, http: httpx.AsyncClient) -> str | None:
-        """Return a valid token, or None for anonymous mode."""
+        """Return a valid token, or None for anonymous/ntlm modes (ntlm authenticates at
+        the transport layer, not via token params)."""
         mode = self.mode
-        if mode == "anonymous":
+        if mode in ("anonymous", "ntlm"):
             return None
         if mode == "api_key":
             return self.api_key
@@ -94,8 +105,12 @@ class TokenManager:
         self._expires_at = time.time() + float(body.get("expires_in", 1800))
 
     async def _fetch_generate_token(self, http: httpx.AsyncClient) -> None:
+        # Portal: {portal}/sharing/rest/generateToken. Standalone ArcGIS Server has no
+        # portal — its endpoint is {server}/arcgis/tokens/generateToken, set explicitly
+        # via ARCGIS_TOKEN_URL.
+        url = self.token_url or f"{self.portal_url}/sharing/rest/generateToken"
         resp = await http.post(
-            f"{self.portal_url}/sharing/rest/generateToken",
+            url,
             data={
                 "username": self.username,
                 "password": self.password,
@@ -106,9 +121,7 @@ class TokenManager:
         )
         body = resp.json()
         if "error" in body or "token" not in body:
-            raise AuthError(
-                f"generateToken failed against {self.portal_url} — check ARCGIS_USERNAME/PASSWORD"
-            )
+            raise AuthError(f"generateToken failed against {url} — check ARCGIS_USERNAME/PASSWORD")
         self._token = body["token"]
         # generateToken returns 'expires' as epoch milliseconds
         self._expires_at = float(body["expires"]) / 1000.0

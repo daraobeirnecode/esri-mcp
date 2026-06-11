@@ -28,6 +28,20 @@ async def test_geocode_stays_transactional():
     assert result[0].longitude == -117.19
 
 
+async def test_custom_geocoder_url_override(monkeypatch):
+    """ARCGIS_GEOCODER_URL points geocoding at any GeocodeServer, not just AGOL."""
+    custom = "https://gis.example.com/arcgis/rest/services/Composite/GeocodeServer"
+    monkeypatch.setenv("ARCGIS_GEOCODER_URL", custom)
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url.copy_with(query=None))
+        return json_response({"candidates": []})
+
+    await geocode_address(make_client(handler), "1 Main St")
+    assert seen["url"] == f"{custom}/findAddressCandidates"
+
+
 async def test_reverse_geocode_parses_address():
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(

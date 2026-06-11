@@ -9,6 +9,10 @@ dependencies = [
     "pydantic>=2.7.0",
 ]
 
+[project.optional-dependencies]
+# IWA/NTLM web-tier auth for ArcGIS Server behind Windows Integrated Authentication
+iwa = ["httpx-ntlm>=1.3.0"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",

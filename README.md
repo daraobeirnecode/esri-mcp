@@ -64,13 +64,27 @@ Anonymous access works out of the box — most public services need no token. Fo
 
 | Mode | Env vars | Use for |
 |---|---|---|
+| IWA / NTLM | `ARCGIS_USE_NTLM=true`, `ARCGIS_USERNAME`, `ARCGIS_PASSWORD` | ArcGIS Server behind Integrated Windows Authentication (web-tier auth, no tokens). Username as `DOMAIN\user` or `user@domain`. Requires the optional extra: `uv sync --extra iwa` |
 | API key | `ARCGIS_API_KEY` | ArcGIS Online API keys |
 | OAuth2 | `ARCGIS_CLIENT_ID`, `ARCGIS_CLIENT_SECRET` | AGOL app registration (client_credentials) |
 | Legacy token | `ARCGIS_USERNAME`, `ARCGIS_PASSWORD`, `ARCGIS_PORTAL_URL` | On-prem ArcGIS Enterprise (`generateToken`) |
+| Standalone server token | `ARCGIS_USERNAME`, `ARCGIS_PASSWORD`, `ARCGIS_TOKEN_URL` | **Standalone ArcGIS Server** (no Portal) — point `ARCGIS_TOKEN_URL` at `https://server:6443/arcgis/tokens/generateToken` |
 
 Tokens are cached in-process and refreshed 5 minutes before expiry. If a stale token hits a public endpoint, the request falls back to anonymous instead of failing. Setting `ARCGIS_PORTAL_URL` also points `search_portal_items` / `get_item_details` at your Enterprise portal instead of arcgis.com.
 
 Credentials never appear in logs, error messages, or tool output.
+
+### Custom geocoder
+
+Geocoding defaults to the AGOL World Geocoder, but `ARCGIS_GEOCODER_URL` points both geocoding tools at any ArcGIS `GeocodeServer` — an Enterprise locator, a standalone-server locator, or a custom-built one:
+
+```
+ARCGIS_GEOCODER_URL=https://your-server.example.com/arcgis/rest/services/YourLocator/GeocodeServer
+```
+
+### Standalone ArcGIS Server (no Portal)
+
+The layer/query tools take full service URLs, so they work against any ArcGIS Server REST endpoint — federated or standalone, public or secured. For a secured standalone server, use `ARCGIS_TOKEN_URL` (token auth) or `ARCGIS_USE_NTLM` (IWA). The portal tools (`search_portal_items`, `get_item_details`) don't apply to standalone servers — discover services via the REST services directory instead.
 
 ## Development
 

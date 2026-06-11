@@ -16,6 +16,44 @@ def test_mode_precedence():
     assert TokenManager().mode == "anonymous"
     # Partial credentials don't activate a mode
     assert TokenManager(username="u").mode == "anonymous"
+    # Standalone ArcGIS Server: token_url works in place of portal_url
+    assert (
+        TokenManager(username="u", password="p", token_url="https://srv:6443/arcgis/tokens").mode
+        == "generate_token"
+    )
+    # Explicit NTLM opt-in beats everything else
+    assert TokenManager(username="DOM\\u", password="p", api_key="k", use_ntlm=True).mode == "ntlm"
+    # NTLM flag without credentials is not NTLM
+    assert TokenManager(use_ntlm=True).mode == "anonymous"
+
+
+async def test_ntlm_mode_returns_no_token():
+    """NTLM authenticates at the transport layer — no token params, no token requests."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("ntlm mode must not make token requests")
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    tm = TokenManager(username="DOM\\u", password="p", use_ntlm=True)
+    assert await tm.get_token(http) is None
+
+
+async def test_standalone_server_token_url_used():
+    """ARCGIS_TOKEN_URL must override the portal-style generateToken path."""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return json_response({"token": "srv-tok", "expires": (time.time() + 3600) * 1000})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    tm = TokenManager(
+        username="u",
+        password="p",
+        token_url="https://srv.example.com:6443/arcgis/tokens/generateToken",
+    )
+    assert await tm.get_token(http) == "srv-tok"
+    assert seen["url"] == "https://srv.example.com:6443/arcgis/tokens/generateToken"
 
 
 async def test_anonymous_returns_none_without_network():

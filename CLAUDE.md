@@ -33,11 +33,14 @@ tests/
 
 ## Authentication
 
-Support three modes, selected by which env vars are present (checked in this order):
+Modes are selected by which env vars are present (checked in this order):
 
-1. `ARCGIS_API_KEY` — AGOL API key, passed as `token` param.
-2. `ARCGIS_CLIENT_ID` / `ARCGIS_CLIENT_SECRET` — OAuth2 client_credentials against `https://www.arcgis.com/sharing/rest/oauth2/token`.
-3. `ARCGIS_USERNAME` / `ARCGIS_PASSWORD` + `ARCGIS_PORTAL_URL` — legacy `generateToken` against `{portal}/sharing/rest/generateToken` (needed for on-prem Enterprise; `referer` param required).
+1. `ARCGIS_USE_NTLM=true` + `ARCGIS_USERNAME` / `ARCGIS_PASSWORD` — IWA/NTLM web-tier auth (no tokens; optional `httpx-ntlm` dep via `uv sync --extra iwa`).
+2. `ARCGIS_API_KEY` — AGOL API key, passed as `token` param.
+3. `ARCGIS_CLIENT_ID` / `ARCGIS_CLIENT_SECRET` — OAuth2 client_credentials against `https://www.arcgis.com/sharing/rest/oauth2/token`.
+4. `ARCGIS_USERNAME` / `ARCGIS_PASSWORD` + `ARCGIS_PORTAL_URL` — legacy `generateToken` against `{portal}/sharing/rest/generateToken` (needed for on-prem Enterprise; `referer` param required). For **standalone ArcGIS Server** (no Portal), set `ARCGIS_TOKEN_URL` to `{server}/arcgis/tokens/generateToken` instead of `ARCGIS_PORTAL_URL`.
+
+`ARCGIS_GEOCODER_URL` overrides the AGOL World Geocoder with any GeocodeServer endpoint.
 
 Rules:
 - Tokens are cached in-process with expiry tracking; refresh 5 minutes before `expires`.

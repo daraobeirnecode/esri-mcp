@@ -23,13 +23,26 @@ class EsriError(Exception):
         self.code = code
 
 
+def _ntlm_auth(tokens: TokenManager) -> httpx.Auth:
+    """IWA/NTLM web-tier auth. Optional dependency — keeps the base install lean."""
+    try:
+        from httpx_ntlm import HttpNtlmAuth
+    except ImportError as exc:
+        raise EsriError(
+            "ARCGIS_USE_NTLM is set but httpx-ntlm is not installed — "
+            "run: uv sync --extra iwa  (or: pip install 'esri-mcp[iwa]')"
+        ) from exc
+    return HttpNtlmAuth(tokens.username, tokens.password)
+
+
 class EsriClient:
     """One client per server process. Esri returns HTTP 200 for errors, so every
     response body is checked for an `error` key and raised from."""
 
     def __init__(self, tokens: TokenManager | None = None, timeout: float = 30.0):
         self.tokens = tokens or TokenManager.from_env()
-        self._http = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+        auth = _ntlm_auth(self.tokens) if self.tokens.mode == "ntlm" else None
+        self._http = httpx.AsyncClient(timeout=timeout, follow_redirects=True, auth=auth)
 
     async def aclose(self) -> None:
         await self._http.aclose()

@@ -1,10 +1,18 @@
-"""Geocoding via the AGOL World Geocoder. forStorage stays false — storing results
-requires a token and different transactional terms."""
+"""Geocoding via the AGOL World Geocoder, or any GeocodeServer set in
+ARCGIS_GEOCODER_URL (Enterprise locator, standalone server, custom-built).
+forStorage stays false — storing World Geocoder results requires a token and
+different transactional terms; custom locators ignore the param harmlessly."""
+
+import os
 
 from esri_mcp.client import EsriClient, EsriError
 from esri_mcp.models import GeocodeCandidate, ReverseGeocodeResult
 
 WORLD_GEOCODER = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer"
+
+
+def _geocoder_base() -> str:
+    return (os.environ.get("ARCGIS_GEOCODER_URL") or WORLD_GEOCODER).rstrip("/")
 
 
 async def geocode_address(
@@ -21,7 +29,7 @@ async def geocode_address(
     }
     if country:
         params["sourceCountry"] = country
-    body = await client.get_json(f"{WORLD_GEOCODER}/findAddressCandidates", params)
+    body = await client.get_json(f"{_geocoder_base()}/findAddressCandidates", params)
     return [
         GeocodeCandidate(
             address=c.get("address", ""),
@@ -40,7 +48,7 @@ async def reverse_geocode(
         "location": f"{longitude},{latitude}",
         "forStorage": "false",
     }
-    body = await client.get_json(f"{WORLD_GEOCODER}/reverseGeocode", params)
+    body = await client.get_json(f"{_geocoder_base()}/reverseGeocode", params)
     address = body.get("address")
     if not address:
         raise EsriError(f"no address found near ({longitude}, {latitude})")

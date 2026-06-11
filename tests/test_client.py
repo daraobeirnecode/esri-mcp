@@ -1,5 +1,7 @@
 """Regression tests for Esri REST gotchas in client.py."""
 
+import sys
+
 import httpx
 import pytest
 
@@ -76,6 +78,19 @@ async def test_long_request_uses_post():
     long_where = "OBJECTID IN (" + ",".join(str(i) for i in range(1000)) + ")"
     await client.get_json("https://example.com/MapServer/0/query", {"where": long_where})
     assert seen["method"] == "POST"
+
+
+def test_ntlm_missing_dependency_raises_clean_error(monkeypatch):
+    """Without the iwa extra installed, NTLM mode must fail with install instructions."""
+    monkeypatch.setitem(sys.modules, "httpx_ntlm", None)  # forces ImportError
+    with pytest.raises(EsriError, match="httpx-ntlm"):
+        EsriClient(tokens=TokenManager(username="DOM\\u", password="p", use_ntlm=True))
+
+
+def test_ntlm_auth_attached_to_http_client():
+    pytest.importorskip("httpx_ntlm")
+    client = EsriClient(tokens=TokenManager(username="DOM\\u", password="p", use_ntlm=True))
+    assert client._http.auth is not None
 
 
 async def test_retries_on_transient_failure():
