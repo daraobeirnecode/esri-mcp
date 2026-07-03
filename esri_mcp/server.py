@@ -1,6 +1,7 @@
 """FastMCP app: tool registration and transport. All transport wiring lives here so
 swapping stdio -> streamable-http later is a one-line change in main()."""
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -152,7 +153,24 @@ async def get_item_details(item_id: str) -> dict[str, Any]:
 
 
 def main() -> None:
-    mcp.run(transport="stdio")  # later: mcp.run(transport="streamable-http")
+    # PORT set (Cloud Run / hosted) -> streamable-http; otherwise stdio subprocess.
+    port = os.environ.get("PORT")
+    if port:
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = int(port)
+        # Each request self-contained: no session affinity, safe across instances.
+        mcp.settings.stateless_http = True
+        # DNS-rebinding protection guards *local* servers against hostile browser
+        # pages; it rejects any Host but localhost. Hosted deployments sit behind
+        # TLS + platform auth (Cloud Run IAM) with a real hostname, so disable it.
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
